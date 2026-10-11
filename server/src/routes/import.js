@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const importService = require('../services/importService');
+const platformManager = require('../integrations/platformManager');
 const { getDb } = require('../database/db');
 const fs = require('fs');
 const path = require('path');
@@ -20,7 +21,11 @@ router.post('/preview', (req, res) => {
     }
 
     if (!Array.isArray(jsonArray)) {
-      return res.status(400).json({ success: false, error: 'Expected a JSON array of student objects' });
+      if (jsonArray && typeof jsonArray === 'object') {
+        jsonArray = [jsonArray];
+      } else {
+        return res.status(400).json({ success: false, error: 'Expected student object or array of student objects' });
+      }
     }
 
     const preview = importService.previewImport(jsonArray);
@@ -33,13 +38,27 @@ router.post('/preview', (req, res) => {
 // POST Commit JSON student import
 router.post('/commit', (req, res) => {
   try {
-    const { students, filename = 'roster.json' } = req.body;
+    let { students, filename = 'roster.json', duplicatePolicy = 'update', autoSync = true } = req.body;
     if (!Array.isArray(students)) {
-      return res.status(400).json({ success: false, error: 'Expected students array to commit' });
+      if (students && typeof students === 'object') {
+        students = [students];
+      } else {
+        return res.status(400).json({ success: false, error: 'Expected student object or array of student objects' });
+      }
     }
 
-    const result = importService.commitImport(students, filename, 0);
-    res.json(result);
+    const result = importService.commitImport(students, filename, 0, duplicatePolicy);
+
+    let syncJobId = null;
+    if (autoSync && result.targetStudentIds && result.targetStudentIds.length > 0) {
+      syncJobId = platformManager.queueSyncStudents(result.targetStudentIds);
+    }
+
+    res.json({
+      ...result,
+      syncJobId,
+      autoSyncStarted: Boolean(syncJobId)
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

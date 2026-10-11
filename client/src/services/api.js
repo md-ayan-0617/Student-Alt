@@ -60,6 +60,11 @@ export const syncStudentPlatform = async (id, platform) => {
   return res.data;
 };
 
+export const syncAllStudentPlatforms = async (id) => {
+  const res = await api.post(`/students/${id}/sync-all`);
+  return res.data;
+};
+
 // Import API
 export const previewImport = async (data) => {
   const res = await api.post('/import/preview', data);

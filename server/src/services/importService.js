@@ -27,6 +27,8 @@ class ImportService {
     const github_id = extractUsername('github', githubInput);
     const hackerrank_id = extractUsername('hackerrank', hackerrankInput);
 
+    const rawStudentId = row.student_id !== undefined ? row.student_id : (row.roll_no !== undefined ? row.roll_no : (row.roll_number !== undefined ? row.roll_number : (row.registration_no !== undefined ? row.registration_no : null)));
+
     return {
       valid: errors.length === 0,
       errors,
@@ -41,18 +43,23 @@ class ImportService {
         branch: row.branch ? String(row.branch).trim() : null,
         batch: row.batch ? String(row.batch).trim() : null,
         semester: row.semester ? String(row.semester).trim() : null,
-        student_id: row.student_id ? String(row.student_id).trim() : null,
+        student_id: rawStudentId ? String(rawStudentId).trim() : null,
         email: row.email ? String(row.email).trim() : null
       }
     };
   }
 
-  previewImport(jsonArray) {
+  previewImport(input) {
+    let jsonArray = input;
     if (!Array.isArray(jsonArray)) {
-      return {
-        success: false,
-        error: 'Uploaded content must be a JSON array of student objects [ { name, leetcode_id, ... } ]'
-      };
+      if (jsonArray && typeof jsonArray === 'object' && typeof jsonArray.name === 'string' && jsonArray.name.trim()) {
+        jsonArray = [jsonArray];
+      } else {
+        return {
+          success: false,
+          error: 'Uploaded content must be a student object (with "name") or a JSON array of student objects [ { name, leetcode_id, ... } ]'
+        };
+      }
     }
 
     const db = getDb();
@@ -151,7 +158,19 @@ class ImportService {
     };
   }
 
-  commitImport(jsonArray, filename = 'imported_roster.json', isDemo = 0) {
+  commitImport(input, filename = 'imported_roster.json', isDemo = 0, duplicatePolicy = 'update') {
+    let jsonArray = input;
+    if (!Array.isArray(jsonArray)) {
+      if (jsonArray && typeof jsonArray === 'object' && typeof jsonArray.name === 'string' && jsonArray.name.trim()) {
+        jsonArray = [jsonArray];
+      } else {
+        return {
+          success: false,
+          error: 'Expected a student object (with "name") or an array of student objects to commit'
+        };
+      }
+    }
+
     const preview = this.previewImport(jsonArray);
     if (!preview.success) return preview;
 
@@ -162,6 +181,7 @@ class ImportService {
     let created = 0;
     let updated = 0;
     let skipped = 0;
+    const targetStudentIds = [];
 
     const existingStudents = db.prepare('SELECT id, name, student_id FROM students').all();
     const existingAccounts = db.prepare('SELECT student_id, platform, username FROM platform_accounts').all();
@@ -232,8 +252,13 @@ class ImportService {
         }
 
         if (targetStudentId) {
+          if (duplicatePolicy === 'skip') {
+            skipped++;
+            continue;
+          }
           updateStudent.run(data.name, data.branch, data.batch, data.semester, data.student_id, data.email, now, targetStudentId);
           updated++;
+          targetStudentIds.push(targetStudentId);
         } else {
           targetStudentId = uuidv4();
           insertStudent.run(
@@ -250,6 +275,7 @@ class ImportService {
             now
           );
           created++;
+          targetStudentIds.push(targetStudentId);
         }
 
         const platformsToLink = [
@@ -294,7 +320,8 @@ class ImportService {
       created,
       updated,
       skipped,
-      totalProcessed: jsonArray.length
+      totalProcessed: jsonArray.length,
+      targetStudentIds
     };
   }
 }

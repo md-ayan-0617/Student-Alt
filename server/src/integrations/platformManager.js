@@ -191,6 +191,123 @@ class PlatformManager {
     }
   }
 
+  queueSyncStudents(studentIds, platform = 'all') {
+    if (!studentIds || studentIds.length === 0) return null;
+    const db = getDb();
+    const jobId = uuidv4();
+    const startTime = new Date().toISOString();
+
+    db.prepare(`
+      INSERT INTO sync_jobs (id, platform, status, profiles_synced, profiles_failed, details, created_at)
+      VALUES (?, ?, 'running', 0, 0, ?, ?)
+    `).run(
+      jobId,
+      platform,
+      JSON.stringify({
+        message: 'Background profile sync initiated for imported students',
+        total_students: studentIds.length,
+        progress: 0
+      }),
+      startTime
+    );
+
+    // Run asynchronously in the background so import HTTP response returns instantly
+    setImmediate(async () => {
+      try {
+        await this.processStudentSyncQueue(jobId, studentIds, platform);
+      } catch (err) {
+        console.error('[PlatformManager] Background sync error:', err);
+        const failTime = new Date().toISOString();
+        db.prepare(`
+          UPDATE sync_jobs SET status = 'failed', details = ?, completed_at = ? WHERE id = ?
+        `).run(JSON.stringify({ error: err.message }), failTime, jobId);
+      }
+    });
+
+    return jobId;
+  }
+
+  async processStudentSyncQueue(jobId, studentIds, platform = 'all') {
+    const db = getDb();
+    const placeholders = studentIds.map(() => '?').join(',');
+    let query = `
+      SELECT student_id, platform 
+      FROM platform_accounts 
+      WHERE student_id IN (${placeholders})
+        AND username IS NOT NULL AND username != ''
+    `;
+    const params = [...studentIds];
+    if (platform !== 'all') {
+      query += ' AND platform = ?';
+      params.push(platform);
+    }
+
+    const accounts = db.prepare(query).all(...params);
+    let synced = 0;
+    let failed = 0;
+    const errors = [];
+
+    // Controlled concurrency batching: 5 concurrent requests with 250ms spacing
+    const concurrency = 5;
+    for (let i = 0; i < accounts.length; i += concurrency) {
+      const batch = accounts.slice(i, i + concurrency);
+      await Promise.all(batch.map(async (acc) => {
+        try {
+          const res = await this.syncStudentAccount(acc.student_id, acc.platform);
+          if (res.success) {
+            synced++;
+          } else {
+            failed++;
+            errors.push({ student_id: acc.student_id, platform: acc.platform, error: res.error });
+          }
+        } catch (err) {
+          failed++;
+          errors.push({ student_id: acc.student_id, platform: acc.platform, error: err.message });
+        }
+      }));
+
+      const progressPercent = Math.round(((synced + failed) / (accounts.length || 1)) * 100);
+      db.prepare(`
+        UPDATE sync_jobs 
+        SET profiles_synced = ?, profiles_failed = ?, details = ?
+        WHERE id = ?
+      `).run(
+        synced,
+        failed,
+        JSON.stringify({
+          total: accounts.length,
+          progress: progressPercent,
+          errors: errors.slice(0, 5)
+        }),
+        jobId
+      );
+
+      // Controlled backoff between batches to prevent 429 rate limits
+      if (i + concurrency < accounts.length) {
+        await new Promise(r => setTimeout(r, 250));
+      }
+    }
+
+    const endTime = new Date().toISOString();
+    const finalStatus = failed === 0 ? 'success' : (synced === 0 ? 'failed' : 'partial');
+    db.prepare(`
+      UPDATE sync_jobs 
+      SET status = ?, profiles_synced = ?, profiles_failed = ?, details = ?, completed_at = ?
+      WHERE id = ?
+    `).run(
+      finalStatus,
+      synced,
+      failed,
+      JSON.stringify({
+        total: accounts.length,
+        progress: 100,
+        errors: errors.slice(0, 10)
+      }),
+      endTime,
+      jobId
+    );
+  }
+
   async runSyncJob(platform = 'all') {
     const db = getDb();
     const jobId = uuidv4();
@@ -199,7 +316,7 @@ class PlatformManager {
     db.prepare(`
       INSERT INTO sync_jobs (id, platform, status, profiles_synced, profiles_failed, details, created_at)
       VALUES (?, ?, 'running', 0, 0, ?, ?)
-    `).run(jobId, platform, JSON.stringify({ message: 'Sync in progress' }), startTime);
+    `).run(jobId, platform, JSON.stringify({ message: 'Sync in progress', progress: 0 }), startTime);
 
     let query = 'SELECT student_id, platform FROM platform_accounts WHERE username IS NOT NULL AND username != ""';
     let params = [];
@@ -213,18 +330,43 @@ class PlatformManager {
     let failed = 0;
     const errors = [];
 
-    for (const acc of accounts) {
-      try {
-        const res = await this.syncStudentAccount(acc.student_id, acc.platform);
-        if (res.success) {
-          synced++;
-        } else {
+    // Controlled concurrency batching of 5
+    const concurrency = 5;
+    for (let i = 0; i < accounts.length; i += concurrency) {
+      const batch = accounts.slice(i, i + concurrency);
+      await Promise.all(batch.map(async (acc) => {
+        try {
+          const res = await this.syncStudentAccount(acc.student_id, acc.platform);
+          if (res.success) {
+            synced++;
+          } else {
+            failed++;
+            errors.push({ student_id: acc.student_id, platform: acc.platform, error: res.error });
+          }
+        } catch (err) {
           failed++;
-          errors.push({ student_id: acc.student_id, platform: acc.platform, error: res.error });
+          errors.push({ student_id: acc.student_id, platform: acc.platform, error: err.message });
         }
-      } catch (err) {
-        failed++;
-        errors.push({ student_id: acc.student_id, platform: acc.platform, error: err.message });
+      }));
+
+      const progressPercent = Math.round(((synced + failed) / (accounts.length || 1)) * 100);
+      db.prepare(`
+        UPDATE sync_jobs 
+        SET profiles_synced = ?, profiles_failed = ?, details = ?
+        WHERE id = ?
+      `).run(
+        synced,
+        failed,
+        JSON.stringify({
+          total: accounts.length,
+          progress: progressPercent,
+          errors: errors.slice(0, 5)
+        }),
+        jobId
+      );
+
+      if (i + concurrency < accounts.length) {
+        await new Promise(r => setTimeout(r, 250));
       }
     }
 
@@ -235,7 +377,14 @@ class PlatformManager {
       UPDATE sync_jobs 
       SET status = ?, profiles_synced = ?, profiles_failed = ?, details = ?, completed_at = ?
       WHERE id = ?
-    `).run(finalStatus, synced, failed, JSON.stringify({ total: accounts.length, errors: errors.slice(0, 10) }), endTime, jobId);
+    `).run(
+      finalStatus,
+      synced,
+      failed,
+      JSON.stringify({ total: accounts.length, progress: 100, errors: errors.slice(0, 10) }),
+      endTime,
+      jobId
+    );
 
     return { jobId, status: finalStatus, synced, failed, total: accounts.length };
   }

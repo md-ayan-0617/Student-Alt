@@ -16,7 +16,7 @@ import {
   Printer
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { getStudentById, syncStudentPlatform, updateStudent } from '../services/api';
+import { getStudentById, syncStudentPlatform, syncAllStudentPlatforms, updateStudent } from '../services/api';
 import DifficultyCard from '../components/cards/DifficultyCard';
 import HistoricalTrendChart from '../components/charts/HistoricalTrendChart';
 
@@ -88,6 +88,23 @@ export default function StudentProfile() {
         fetchStudent();
       } else {
         showToast(`Failed to sync ${platform}: ${res.error}`, 'error');
+      }
+    } catch (e) {
+      showToast(`Sync error: ${e.message}`, 'error');
+    } finally {
+      setSyncingPlatform(null);
+    }
+  };
+
+  const handleSyncAllPlatforms = async () => {
+    setSyncingPlatform('all');
+    try {
+      const res = await syncAllStudentPlatforms(id);
+      if (res.success) {
+        showToast('Successfully refreshed all linked platform profiles!', 'success');
+        fetchStudent();
+      } else {
+        showToast(`Sync failed: ${res.error}`, 'error');
       }
     } catch (e) {
       showToast(`Sync error: ${e.message}`, 'error');
@@ -171,6 +188,14 @@ export default function StudentProfile() {
           >
             <Printer className="w-3.5 h-3.5" />
             <span>Print Dossier</span>
+          </button>
+          <button
+            onClick={handleSyncAllPlatforms}
+            disabled={syncingPlatform !== null}
+            className="px-3 py-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--surface-elevated)] hover:border-[#EA5652] text-xs text-[#EA5652] font-medium transition-colors flex items-center gap-1.5 shadow-sm"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncingPlatform === 'all' ? 'animate-spin' : ''}`} />
+            <span>{syncingPlatform === 'all' ? 'Refreshing All...' : 'Refresh All Platforms'}</span>
           </button>
           <button
             onClick={() => setEditModalOpen(true)}

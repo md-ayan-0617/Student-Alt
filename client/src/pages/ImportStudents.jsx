@@ -60,6 +60,9 @@ export default function ImportStudents() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [commitLoading, setCommitLoading] = useState(false);
   const [historyJobs, setHistoryJobs] = useState([]);
+  const [duplicatePolicy, setDuplicatePolicy] = useState('update'); // 'update' | 'skip'
+  const [autoSync, setAutoSync] = useState(true);
+  const [commitResult, setCommitResult] = useState(null);
 
   // JSON Editor States
   const [editorContent, setEditorContent] = useState('');
@@ -120,11 +123,15 @@ export default function ImportStudents() {
       return null;
     }
     try {
-      const parsed = JSON.parse(text);
+      let parsed = JSON.parse(text);
       if (!Array.isArray(parsed)) {
-        setEditorError('Root element must be a JSON array of student objects: [ { ... } ]');
-        setEditorRecordsCount(0);
-        return null;
+        if (parsed && typeof parsed === 'object') {
+          parsed = [parsed];
+        } else {
+          setEditorError('Root element must be a student object or array of student objects: [ { ... } ]');
+          setEditorRecordsCount(0);
+          return null;
+        }
       }
       setEditorError(null);
       setEditorRecordsCount(parsed.length);
@@ -375,7 +382,10 @@ export default function ImportStudents() {
         try {
           const raw = event.target.result;
           setFileContentRaw(raw);
-          const parsed = JSON.parse(raw);
+          let parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed) && typeof parsed === 'object') {
+            parsed = [parsed];
+          }
           runPreview(parsed, selectedFile.name);
         } catch (parseErr) {
           showToast('Invalid JSON file syntax: ' + parseErr.message, 'error');
@@ -389,7 +399,10 @@ export default function ImportStudents() {
   const handleOpenUploadedInEditor = () => {
     if (!file || !fileContentRaw) return;
     try {
-      const parsed = JSON.parse(fileContentRaw);
+      let parsed = JSON.parse(fileContentRaw);
+      if (!Array.isArray(parsed) && typeof parsed === 'object') {
+        parsed = [parsed];
+      }
       const pretty = JSON.stringify(parsed, null, 2);
       setEditorContent(pretty);
       setEditorFilename(file.name);
@@ -406,11 +419,14 @@ export default function ImportStudents() {
   const handlePasteSubmit = (e) => {
     e.preventDefault();
     if (!jsonText.trim()) {
-      showToast('Please paste a JSON array', 'error');
+      showToast('Please paste a JSON array or student object', 'error');
       return;
     }
     try {
-      const parsed = JSON.parse(jsonText);
+      let parsed = JSON.parse(jsonText);
+      if (!Array.isArray(parsed) && typeof parsed === 'object') {
+        parsed = [parsed];
+      }
       runPreview(parsed, 'pasted_roster.json');
     } catch (parseErr) {
       showToast('Malformed JSON syntax: ' + parseErr.message, 'error');
@@ -421,6 +437,7 @@ export default function ImportStudents() {
   const runPreview = async (jsonArray, filename) => {
     setPreviewLoading(true);
     setPreviewData(null);
+    setCommitResult(null);
     try {
       const res = await previewImport(jsonArray);
       if (res.success) {
@@ -452,16 +469,22 @@ export default function ImportStudents() {
     try {
       const res = await commitImport({
         students: previewData.originalArray,
-        filename: previewData.filename || 'roster.json'
+        filename: previewData.filename || 'roster.json',
+        duplicatePolicy,
+        autoSync
       });
       if (res.success) {
         showToast(`Successfully committed ${res.created} new students, updated ${res.updated} existing records.`, 'success');
         await refreshSystemStatus();
         fetchHistory();
+        setCommitResult({
+          ...res,
+          filename: previewData.filename,
+          autoSyncStarted: res.autoSyncStarted
+        });
         setPreviewData(null);
         setFile(null);
         setJsonText('');
-        navigate('/students');
       } else {
         showToast(res.error || 'Commit failed', 'error');
       }
@@ -1120,6 +1143,97 @@ export default function ImportStudents() {
         </div>
       )}
 
+      {/* POST-COMMIT RESULTS SUMMARY (Displayed after successful commit) */}
+      {commitResult && (
+        <div className="card-base p-6 space-y-5 border-emerald-500/50 bg-emerald-500/5 animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--border-color)] pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-[var(--text-primary)]">
+                  Student Roster Import & Database Commit Completed
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                  File: <span className="font-mono text-[var(--text-primary)]">{commitResult.filename}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCommitResult(null)}
+                className="px-3.5 py-1.5 rounded-lg border border-[var(--border-color)] text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              >
+                Dismiss
+              </button>
+              <button
+                onClick={() => navigate('/students')}
+                className="px-4 py-2 rounded-lg bg-[var(--accent-blue)] text-white text-xs font-semibold hover:opacity-90 transition-opacity flex items-center gap-1.5 shadow-sm"
+              >
+                <span>View Students Directory</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Result Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="card-base p-3 bg-[var(--surface-elevated)]">
+              <span className="text-[10px] text-blue-400 uppercase font-semibold">New Students Added</span>
+              <div className="text-2xl font-bold font-mono text-blue-400 mt-1">
+                {commitResult.created}
+              </div>
+            </div>
+
+            <div className="card-base p-3 bg-[var(--surface-elevated)]">
+              <span className="text-[10px] text-purple-400 uppercase font-semibold">Existing Records Updated</span>
+              <div className="text-2xl font-bold font-mono text-purple-400 mt-1">
+                {commitResult.updated}
+              </div>
+            </div>
+
+            <div className="card-base p-3 bg-[var(--surface-elevated)]">
+              <span className="text-[10px] text-[var(--text-muted)] uppercase font-semibold">Duplicates Skipped</span>
+              <div className="text-2xl font-bold font-mono text-[var(--text-muted)] mt-1">
+                {commitResult.skipped}
+              </div>
+            </div>
+
+            <div className="card-base p-3 bg-emerald-500/10 border-emerald-500/30">
+              <span className="text-[10px] text-emerald-400 uppercase font-semibold">Total Processed</span>
+              <div className="text-2xl font-bold font-mono text-emerald-400 mt-1">
+                {commitResult.totalProcessed}
+              </div>
+            </div>
+          </div>
+
+          {/* Background Live Profile Fetch Notice */}
+          {commitResult.autoSyncStarted && (
+            <div className="p-3.5 rounded-lg bg-[var(--surface-elevated)] border border-[var(--accent-teal)]/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <RefreshCw className="w-4 h-4 text-[var(--accent-teal)] animate-spin shrink-0" />
+                <div className="text-xs">
+                  <span className="font-semibold text-[var(--text-primary)]">
+                    Live Profile Analytics Fetching in Background
+                  </span>
+                  <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+                    Platform connectors are querying LeetCode, GFG, CodeChef, GitHub, and HackerRank via controlled background concurrency without blocking your dashboard.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate('/synchronization')}
+                className="px-3 py-1.5 rounded-lg bg-[var(--accent-teal)]/15 border border-[var(--accent-teal)]/40 hover:bg-[var(--accent-teal)]/25 text-[var(--accent-teal)] text-xs font-medium transition-colors shrink-0 whitespace-nowrap"
+              >
+                Track Sync Progress
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* PREVIEW SECTION (Displayed after validation) */}
       {previewData && (
         <div className="card-base p-6 space-y-6 border-[var(--accent-blue)]/50 animate-in fade-in duration-200">
@@ -1152,6 +1266,31 @@ export default function ImportStudents() {
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
+          </div>
+
+          {/* Policy & Auto-Sync Controls Bar */}
+          <div className="p-3.5 rounded-lg bg-[var(--surface-elevated)] border border-[var(--border-color)] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-[var(--text-secondary)]">Duplicate Record Policy:</span>
+              <select
+                value={duplicatePolicy}
+                onChange={(e) => setDuplicatePolicy(e.target.value)}
+                className="px-2.5 py-1 text-xs bg-[var(--surface-main)] border border-[var(--border-color)] rounded text-[var(--text-primary)] focus:outline-none focus:border-[#EA5652]"
+              >
+                <option value="update">Update Existing Records (Keep Historical Snapshots)</option>
+                <option value="skip">Skip Existing Records (Insert New Only)</option>
+              </select>
+            </div>
+
+            <label className="flex items-center gap-2 cursor-pointer select-none text-[var(--text-primary)]">
+              <input
+                type="checkbox"
+                checked={autoSync}
+                onChange={(e) => setAutoSync(e.target.checked)}
+                className="rounded border-[var(--border-color)] text-[#EA5652] focus:ring-0"
+              />
+              <span className="font-medium text-xs">Automatically fetch live platform stats after import</span>
+            </label>
           </div>
 
           {/* Validation Metrics */}

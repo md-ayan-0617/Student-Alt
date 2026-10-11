@@ -103,4 +103,20 @@ router.post('/:id/sync/:platform', async (req, res) => {
   }
 });
 
+// POST sync all platforms for a single student
+router.post('/:id/sync-all', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const platforms = ['leetcode', 'gfg', 'codechef', 'github', 'hackerrank'];
+    const results = {};
+    for (const p of platforms) {
+      results[p] = await platformManager.syncStudentAccount(id, p);
+    }
+    const updated = studentService.getStudentById(id);
+    res.json({ success: true, results, data: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

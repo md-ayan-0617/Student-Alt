@@ -109,6 +109,35 @@ runTest('Import handles missing optional fields cleanly', () => {
   assert.strictEqual(preview.preview[0].record.gfg_id, '');
 });
 
+runTest('Import preview correctly accepts a single student object', () => {
+  const singleStudent = {
+    name: 'Aarav Patel',
+    student_id: 'CS24B999',
+    leetcode_id: 'aarav_patel',
+    branch: 'Computer Science & Engineering'
+  };
+  const preview = importService.previewImport(singleStudent);
+  assert.strictEqual(preview.success, true);
+  assert.strictEqual(preview.total_records, 1);
+  assert.strictEqual(preview.valid_records, 1);
+  assert.strictEqual(preview.preview[0].record.name, 'Aarav Patel');
+});
+
+runTest('Import commit respects duplicatePolicy="skip"', () => {
+  const testStudent = {
+    name: 'Duplicate Test Student',
+    student_id: 'TEST_DUP_001',
+    leetcode_id: 'test_dup_lc'
+  };
+  const commit1 = importService.commitImport(testStudent, 'test.json', 1, 'update');
+  assert.strictEqual(commit1.created, 1);
+
+  const commit2 = importService.commitImport(testStudent, 'test.json', 1, 'skip');
+  assert.strictEqual(commit2.skipped, 1);
+  assert.strictEqual(commit2.created, 0);
+  assert.strictEqual(commit2.updated, 0);
+});
+
 // 3. STUDENT SERVICE & SCALABILITY
 console.log('\n--- 3. Testing Student Roster Queries & Scalability ---');
 
