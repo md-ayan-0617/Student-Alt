@@ -1,0 +1,23 @@
+{
+  "name": "campus-coding-intelligence",
+  "version": "1.0.0",
+  "description": "College Coding Performance & Analytics Institutional Platform",
+  "main": "server/src/index.js",
+  "scripts": {
+    "start": "node server/src/index.js",
+    "server": "node server/src/index.js",
+    "client": "npm --prefix client run dev",
+    "dev": "concurrently \"node server/src/index.js\" \"npm --prefix client run dev\"",
+    "build": "npm --prefix client run build"
+  },
+  "dependencies": {
+    "axios": "^1.8.2",
+    "better-sqlite3": "^13.0.3",
+    "concurrently": "^9.1.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "uuid": "^11.1.0"
+  }
+}
