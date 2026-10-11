@@ -39,10 +39,10 @@ export default function Sidebar() {
       group: 'STUDENT ANALYTICS',
       items: [
         { name: 'All Students', path: '/students', icon: Users, badge: demoStatus.totalStudents },
-        { name: 'Cohort & Student Comparison', path: '/compare', icon: GitCompare },
+        { name: 'Student Comparison', path: '/student-comparison', icon: GitCompare },
+        { name: 'Global Platform Rankings', path: '/rankings', icon: Trophy },
         { name: 'Problem-Solving Analysis', path: '/problem-solving', icon: Code2 },
         { name: 'Activity & Consistency', path: '/activity', icon: Flame },
-        { name: 'Rankings & Leaderboards', path: '/leaderboards', icon: Trophy },
         { name: 'Skills & Topic Analysis', path: '/skills', icon: Sparkles }
       ]
     },

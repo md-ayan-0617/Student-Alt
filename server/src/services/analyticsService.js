@@ -3,7 +3,7 @@ const { getDb } = require('../database/db');
 class AnalyticsService {
   getOverview(filters = {}) {
     const db = getDb();
-    const { branch, batch, timeRange = '30d' } = filters;
+    const { branch, batch, semester, timeRange = '30d' } = filters;
 
     let studentFilter = 'WHERE 1=1';
     const params = [];
@@ -14,6 +14,10 @@ class AnalyticsService {
     if (batch && batch !== 'all') {
       studentFilter += ' AND s.batch = ?';
       params.push(batch);
+    }
+    if (semester && semester !== 'all') {
+      studentFilter += ' AND s.semester = ?';
+      params.push(semester);
     }
 
     // 1. Coverage
@@ -314,7 +318,7 @@ class AnalyticsService {
 
   getLeaderboards(type = 'total_solved', options = {}) {
     const db = getDb();
-    const { branch, batch, limit = 50 } = options;
+    const { branch, batch, semester, limit = 50 } = options;
 
     let filter = 'WHERE 1=1';
     const params = [];
@@ -325,6 +329,10 @@ class AnalyticsService {
     if (batch && batch !== 'all') {
       filter += ' AND s.batch = ?';
       params.push(batch);
+    }
+    if (semester && semester !== 'all') {
+      filter += ' AND s.semester = ?';
+      params.push(semester);
     }
 
     let query = '';

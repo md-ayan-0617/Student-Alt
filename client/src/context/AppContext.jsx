@@ -1,21 +1,23 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { getSettings } from '../services/api';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { getSettings, getPlatformsStatus, triggerPlatformSync } from '../services/api';
 
 const AppContext = createContext(null);
 
 export const AppProvider = ({ children }) => {
-  // Theme management
+  // Theme management — Light theme is the primary default experience
   const [theme, setTheme] = useState(() => {
-    return localStorage.getItem('cci_theme') || 'dark';
+    return localStorage.getItem('cci_theme') || 'light';
   });
 
   useEffect(() => {
     localStorage.setItem('cci_theme', theme);
     const root = document.documentElement;
-    if (theme === 'light') {
-      root.classList.add('light');
-    } else {
+    if (theme === 'dark') {
+      root.classList.add('dark');
       root.classList.remove('light');
+    } else {
+      root.classList.add('light');
+      root.classList.remove('dark');
     }
   }, [theme]);
 
@@ -27,12 +29,82 @@ export const AppProvider = ({ children }) => {
   const [filters, setFilters] = useState({
     branch: 'all',
     batch: 'all',
+    semester: 'all',
     timeRange: '30d'
   });
 
   const updateFilters = (newFilters) => {
     setFilters(prev => ({ ...prev, ...newFilters }));
   };
+
+  // Platform Synchronization Metadata (Real backend timestamps)
+  const [syncMetadata, setSyncMetadata] = useState({
+    latestSyncTime: null,
+    syncState: 'never', // 'synced' | 'syncing' | 'stale' | 'error' | 'never'
+    platforms: [],
+    isSyncing: false
+  });
+
+  const refreshSyncStatus = useCallback(async () => {
+    try {
+      const res = await getPlatformsStatus();
+      if (res.success && Array.isArray(res.platforms)) {
+        let maxSync = null;
+        let hasErrors = false;
+
+        res.platforms.forEach(p => {
+          if (p.lastSync) {
+            const syncDate = new Date(p.lastSync);
+            if (!maxSync || syncDate > maxSync) {
+              maxSync = syncDate;
+            }
+          }
+          if (p.errorCount > 0) hasErrors = true;
+        });
+
+        let state = 'never';
+        if (maxSync) {
+          const ageHours = (Date.now() - maxSync.getTime()) / (1000 * 60 * 60);
+          if (ageHours < 2) {
+            state = 'synced';
+          } else if (ageHours < 24) {
+            state = 'synced';
+          } else {
+            state = 'stale';
+          }
+        } else if (hasErrors) {
+          state = 'error';
+        }
+
+        setSyncMetadata(prev => ({
+          ...prev,
+          latestSyncTime: maxSync ? maxSync.toISOString() : null,
+          syncState: prev.isSyncing ? 'syncing' : state,
+          platforms: res.platforms
+        }));
+      }
+    } catch (e) {
+      console.warn('Failed to load platform synchronization status:', e);
+    }
+  }, []);
+
+  const triggerGlobalSync = async (platform = 'all') => {
+    setSyncMetadata(prev => ({ ...prev, isSyncing: true, syncState: 'syncing' }));
+    try {
+      await triggerPlatformSync(platform);
+      await refreshSyncStatus();
+      return { success: true };
+    } catch (e) {
+      setSyncMetadata(prev => ({ ...prev, isSyncing: false, syncState: 'error' }));
+      return { success: false, error: e.message };
+    } finally {
+      setSyncMetadata(prev => ({ ...prev, isSyncing: false }));
+    }
+  };
+
+  useEffect(() => {
+    refreshSyncStatus();
+  }, [refreshSyncStatus]);
 
   // System Demo Status
   const [demoStatus, setDemoStatus] = useState({
@@ -97,6 +169,9 @@ export const AppProvider = ({ children }) => {
         updateFilters,
         demoStatus,
         refreshSystemStatus,
+        syncMetadata,
+        refreshSyncStatus,
+        triggerGlobalSync,
         searchModalOpen,
         setSearchModalOpen,
         toast,

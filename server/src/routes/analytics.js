@@ -15,8 +15,8 @@ router.get('/overview', (req, res) => {
 // Leaderboards
 router.get('/leaderboards', (req, res) => {
   try {
-    const { type = 'total_solved', branch, batch, limit = 50 } = req.query;
-    const data = analyticsService.getLeaderboards(type, { branch, batch, limit: parseInt(limit, 10) });
+    const { type = 'total_solved', branch, batch, semester, limit = 50 } = req.query;
+    const data = analyticsService.getLeaderboards(type, { branch, batch, semester, limit: parseInt(limit, 10) });
     res.json({ success: true, data, type });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

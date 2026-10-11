@@ -178,16 +178,18 @@ class PlatformManager {
       this.calculateCompleteness(studentId);
       return { success: true, metrics: m, profile_url: verifiedProfileUrl, username: cleanUsername };
     } else {
-      // Record structured error and sanitize handle
-      const newStatus = result.code === 'USER_NOT_FOUND' ? 'not_found' : 'error';
+      // Failed synchronization must preserve previous successful snapshot timestamp and mark as stale
+      const previousSuccessfulSync = account.last_sync_at;
+      const newStatus = previousSuccessfulSync ? 'stale' : (result.code === 'USER_NOT_FOUND' ? 'not_found' : 'error');
+      
       db.prepare(`
         UPDATE platform_accounts 
-        SET status = ?, last_sync_at = ?, last_error = ?, username = ?, profile_url = ?
+        SET status = ?, last_error = ?, username = ?, profile_url = ?
         WHERE id = ?
-      `).run(newStatus, now, result.error, cleanUsername, canonicalUrl, account.id);
+      `).run(newStatus, result.error, cleanUsername, canonicalUrl, account.id);
 
       this.calculateCompleteness(studentId);
-      return { success: false, error: result.error, code: result.code };
+      return { success: false, error: result.error, code: result.code, preservedLastSync: previousSuccessfulSync };
     }
   }
 

@@ -60,10 +60,12 @@ function AppLayout() {
             <Route path="/" element={<CollegeOverview />} />
             <Route path="/students" element={<AllStudents />} />
             <Route path="/students/:id" element={<StudentProfile />} />
-            <Route path="/compare" element={<StudentComparison />} />
+            <Route path="/student-comparison" element={<StudentComparison />} />
+            <Route path="/compare" element={<Navigate to="/student-comparison" replace />} />
+            <Route path="/rankings" element={<RankingsLeaderboards />} />
+            <Route path="/leaderboards" element={<Navigate to="/rankings" replace />} />
             <Route path="/problem-solving" element={<ProblemSolving />} />
             <Route path="/activity" element={<ActivityAnalytics />} />
-            <Route path="/leaderboards" element={<RankingsLeaderboards />} />
             <Route path="/skills" element={<SkillsAnalytics />} />
             <Route path="/platforms" element={<PlatformComparison />} />
             <Route path="/platforms/leetcode" element={<LeetCodeAnalytics />} />

@@ -124,10 +124,11 @@ runTest('Import preview correctly accepts a single student object', () => {
 });
 
 runTest('Import commit respects duplicatePolicy="skip"', () => {
+  const uniqRoll = 'TEST_DUP_' + Date.now();
   const testStudent = {
     name: 'Duplicate Test Student',
-    student_id: 'TEST_DUP_001',
-    leetcode_id: 'test_dup_lc'
+    student_id: uniqRoll,
+    leetcode_id: 'test_dup_' + Date.now()
   };
   const commit1 = importService.commitImport(testStudent, 'test.json', 1, 'update');
   assert.strictEqual(commit1.created, 1);

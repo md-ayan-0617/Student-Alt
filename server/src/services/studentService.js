@@ -22,15 +22,16 @@ class StudentService {
     let baseQuery = `
       SELECT 
         s.id, s.name, s.branch, s.batch, s.semester, s.student_id, s.email, s.data_completeness, s.is_demo, s.created_at, s.updated_at,
-        lc.username as leetcode_username, lc.profile_url as leetcode_url, lc.status as leetcode_status, lc.last_sync_at as leetcode_sync,
+        lc.username as leetcode_username, lc.profile_url as leetcode_url, lc.status as leetcode_status, lc.last_sync_at as leetcode_sync, lc.last_error as leetcode_error,
         lcm.total_solved as leetcode_solved, lcm.easy_solved as leetcode_easy, lcm.medium_solved as leetcode_medium, lcm.hard_solved as leetcode_hard, lcm.rating as leetcode_rating,
-        gfg.username as gfg_username, gfg.profile_url as gfg_url, gfg.status as gfg_status, gfg.last_sync_at as gfg_sync,
-        gfgm.total_solved as gfg_solved, gfgm.rating as gfg_score, gfgm.institutional_rank as gfg_institute_rank, gfgm.raw_data as gfg_raw,
-        cc.username as codechef_username, cc.profile_url as codechef_url, cc.status as codechef_status, cc.last_sync_at as codechef_sync,
-        ccm.total_solved as codechef_solved, ccm.rating as codechef_rating, ccm.stars as codechef_stars, ccm.global_rank as codechef_global_rank,
-        gh.username as github_username, gh.profile_url as github_url, gh.status as github_status,
+        lcm.global_rank as leetcode_global_rank, lcm.contests_attended as leetcode_contests,
+        gfg.username as gfg_username, gfg.profile_url as gfg_url, gfg.status as gfg_status, gfg.last_sync_at as gfg_sync, gfg.last_error as gfg_error,
+        gfgm.total_solved as gfg_solved, gfgm.rating as gfg_score, gfgm.institutional_rank as gfg_institute_rank, gfgm.global_rank as gfg_global_rank, gfgm.raw_data as gfg_raw,
+        cc.username as codechef_username, cc.profile_url as codechef_url, cc.status as codechef_status, cc.last_sync_at as codechef_sync, cc.last_error as codechef_error,
+        ccm.total_solved as codechef_solved, ccm.rating as codechef_rating, ccm.stars as codechef_stars, ccm.global_rank as codechef_global_rank, ccm.country_rank as codechef_country_rank,
+        gh.username as github_username, gh.profile_url as github_url, gh.status as github_status, gh.last_sync_at as github_sync, gh.last_error as github_error,
         ghm.github_repos, ghm.github_stars,
-        hr.username as hackerrank_username, hr.profile_url as hackerrank_url, hr.status as hackerrank_status,
+        hr.username as hackerrank_username, hr.profile_url as hackerrank_url, hr.status as hackerrank_status, hr.last_sync_at as hackerrank_sync, hr.last_error as hackerrank_error,
         hrm.total_solved as hackerrank_solved, hrm.rating as hackerrank_rating
       FROM students s
       LEFT JOIN platform_accounts lc ON s.id = lc.student_id AND lc.platform = 'leetcode'
@@ -101,12 +102,19 @@ class StudentService {
     // Sorting
     const sortMap = {
       name: 's.name',
+      student_id: 's.student_id',
+      branch: 's.branch',
+      batch: 's.batch',
+      semester: 's.semester',
       completeness: 's.data_completeness',
       leetcode_solved: 'COALESCE(lcm.total_solved, 0)',
       leetcode_rating: 'COALESCE(lcm.rating, 0)',
+      leetcode_rank: 'COALESCE(lcm.global_rank, 999999999)',
       gfg_solved: 'COALESCE(gfgm.total_solved, 0)',
+      gfg_score: 'COALESCE(gfgm.rating, 0)',
       codechef_solved: 'COALESCE(ccm.total_solved, 0)',
       codechef_rating: 'COALESCE(ccm.rating, 0)',
+      codechef_rank: 'COALESCE(ccm.global_rank, 999999999)',
       hackerrank_solved: 'COALESCE(hrm.total_solved, 0)',
       github_repos: 'COALESCE(ghm.github_repos, 0)',
       total_solved: '(COALESCE(lcm.total_solved, 0) + COALESCE(gfgm.total_solved, 0) + COALESCE(ccm.total_solved, 0))',
